@@ -1,0 +1,165 @@
+---
+- name: Update Java con versión actual de cada servidor
+  hosts: all
+  gather_facts: true
+  become: true
+  vars:
+    #### Inputs ######
+    #java_version: [1.8, 17, 21]
+    #java_rpl: [SI,NO]
+    ##################
+    - server_mail: "corre@correo.com"
+    - server_port: 25
+    - correo_de: "ansible@correo.com"
+    - correo_para: "administradores@correo.com"
+    - file_path: /tmp 	#Donde guardaremos archivo de recolección
+  tasks:  
+    - name: Comprobar si java está disponible
+      shell: java -version 2>&1 | head -n 1
+      register: javac_check
+    
+    - name: muestra versión actual del java
+      debug: 
+        msg: "{{ ansible_hostname }} - Version actual del java {{ javac_check.stdout }}"
+
+    - name: Registrar hostname y version de java en archivo de recolección
+      lineinfile:
+        line: >
+          Antes del Update
+          {{ ansible_hostname }} -
+          {% if "command not found" in javac_check.stdout %}
+          no se realizó cambios.
+          {% else %}
+          {{ javac_check.stdout }}
+          {% endif %}
+        path: "{{ file_path }}/install_servers.txt"
+        create: yes
+      delegate_to: localhost
+
+    - name: Solo actualiza los servidores que tienen Java
+      block:          
+        - name: Obtener la versión actual de Java
+          shell: alternatives --display java | grep "link currently points to" | awk '{print $5}'
+          register: current_java
+          changed_when: false
+
+        - name: Asignar versión de paquete según la versión detectada
+          set_fact:
+            java_version: >-
+              {% if '1.8' in current_java.stdout %} jdk-1.8
+              {% elif '17' in current_java.stdout %} jdk-17
+              {% elif '21' in current_java.stdout %} jdk-21
+              {% else %} no_detectado {% endif %}
+
+        - name: Verificar si se detectó una versión compatible
+          fail:
+            msg: "No se pudo detectar una versión de Java compatible."
+          when: java_version == "no_detectado"
+
+        - name: Limpiar caché de Yum
+          command: yum clean all
+
+        - name: Eliminar el archivo java.repo si existe
+          file:
+            path: /etc/yum.repos.d/[Jj]ava.repo
+            state: absent
+          ignore_errors: yes
+
+        - name: Versión del SO
+          debug:
+            msg: "La versión del sistema operativo es {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+        - name: Crear repositorio java en /etc/yum.repos.d/ para RHEL 8.x
+          template:
+            src: "repos/java_repo_rhel8.j2"
+            dest: "/etc/yum.repos.d/java.repo"
+          when: 
+            - ansible_distribution == 'RedHat'
+            - ansible_distribution_version is version('8', '>=')
+            - ansible_distribution_version is version('9', '<')
+
+        - name: Crear repositorio java en /etc/yum.repos.d/ para RHEL 9.x
+          template:
+            src: "repos/java_repo_rhel9.j2"
+            dest: "/etc/yum.repos.d/java.repo"
+          when: 
+            - ansible_distribution == 'RedHat'
+            - ansible_distribution_version is version('9', '>=')
+
+        - name: Actualización java RHEL 8.x y 9.x
+          yum:
+            name: "{{ java_version }}"
+            state: latest         
+            disablerepo: '*'
+            enablerepo: "Java"
+          register: normal_update_result
+
+        - name: obteniendo la info de la variable de remplazo
+          set_fact:
+            java_rpl: "{{ java_rpl | default('NO') }}" 
+            # SI = reemplaza la versión de actual de java 
+            # NO o vacio = deja la versión de actual de java
+
+        - name: Restaurar y deja la versión actual de Java
+          command: "alternatives --set java {{ current_java.stdout }}"
+          when: java_rpl | upper != "SI" # Solo se ejecuta si esta vacio o NO
+
+        - name: validando la nueva versión java
+          shell: java -version 2>&1 | head -n 1
+          register: javac_check_val
+          when: java_rpl | upper == "SI" # Solo se ejecuta si esta vacio o NO
+
+        - name: Registrar hostname y version de java
+          lineinfile:
+            line: >
+                Despues del Update {{ ansible_hostname }} -
+                {% if java_rpl == "SI"  %}
+                {{ javac_check_val.stdout }}
+                {% else %}
+                {{ javac_check.stdout }}
+                {% endif %}
+            path: "{{ file_path }}/install_servers.txt"
+          delegate_to: localhost
+
+      when: "'command not found' not in javac_check.stdout"
+
+- name: Enviar correo con los resultados
+  hosts: localhost
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Enviar reporte de instalación de Java
+      mail:
+        host: "{{ server_mail }}"
+        port: "{{ server_puerto }}"
+        subject: "Reporte de instalación de Java" 
+        body: >
+            Estimados
+
+
+            Se adjunta el Reporte de los servidores que se instaló Java.
+
+            {% if hostvars[inventory_hostname]['java_rpl'] | default('NO')  != 'SI' %}
+
+            Este proceso se eligió la opción donde instala la "misma" versión de java, pero no elimina, ni cambia la versión actual.
+
+            {% else %} 
+            
+            Este proceso se eligió la opción donde instala la "misma" versión de java, la nueva versión "Reemplaza" la versión actual, pero no la elimina.            
+            
+            {% endif %}
+
+
+            Saludos,
+
+  
+            Administrador Ansible 
+
+        from: "{{ correo_de }}"
+        to:"{{ correo_para }}"
+        attach: "/tmp/install_servers.txt"    
+
+    - name: Eliminar el archivo generado 
+      file:
+        path: /tmp/install_servers.txt
+        state: absent
