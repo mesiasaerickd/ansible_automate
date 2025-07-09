@@ -1,0 +1,102 @@
+---
+- name: Eliminar Snapshots para servidores en el inventario
+  strategy: free
+  gather_facts: false
+  hosts: localhost
+  vars_files:
+    - ./secrets/credenciales.txt #Estas son las credenciales en vault, en modo global
+  vars:
+    ##### INPUTS #####
+    # ambiente_data = [Prd, noPrd]
+    # snapshot_data = [Etiqueta de mv]
+    ##################
+    - server_mail: "127.0.0.1"
+    - server_puerto: 25
+    - correo_de: "ansible@correo.com"
+    - correo_para: "administradores@correo.com"
+
+  collections:
+    - community.vmware    
+
+  tasks:
+    - name: verifica si es para PRD o NOPRD
+      set_fact:
+        vcenter: "{{ vcenterprd if ambiente_data == 'Prod' else vcenterdes }}"
+
+    - name: verifica si la variable principal esta vacia y termina el playbook
+      meta: end_play
+      when: snapshot_data == ""
+
+    - name: Definir lista vacía para servidores con snapshots eliminados
+      set_fact:
+        deleted_vms: []  
+
+    - name: Obtener todos los snapshots de las máquinas virtuales
+      vmware_guest_snapshot_info:
+        hostname: "{{ vcenter }}"
+        username: "{{ vcusuario }}"
+        password: "{{ vcpassword }}"
+        validate_certs: no
+        datacenter: "Datacenter"
+        folder: "/DC/"
+        name: "{{ item.split(' \n ')[0] }}"
+      with_items: "{{ snapshot_data.split('\n') }}"
+      register: snapshot_result_vcenter
+      ignore_errors: yes
+
+    - name: Crear lista con nombre de VM y snapshots (solo si tiene snapshots)
+      set_fact:
+        vm_snapshots: "{{ vm_snapshots | default([]) + [{'vm_name': item.item.split(' \n ')[0], 'snapshots': item.guest_snapshots.snapshots}] }}"
+      loop: "{{ snapshot_result_vcenter.results }}"
+      loop_control:
+        loop_var: item
+      when: item.guest_snapshots.snapshots is defined and item.guest_snapshots.snapshots | length > 0  # Filtra las VMs que tienen snapshots
+      ignore_errors: yes
+
+    - name: Eliminar todos los snapshots para cada VM
+      vmware_guest_snapshot:
+        hostname: "{{ vcenter }}"
+        username: "{{ vcusuario }}"
+        password: "{{ vcpassword }}"
+        validate_certs: no
+        datacenter: "Datacenter"
+        folder: "/DC_izipay/"
+        snapshot_name: "{{ snapshot.name }}"  # Nombre del snapshot
+        state: absent
+        name: "{{ vm.vm_name }}"  # Nombre de la VM
+      loop: "{{ vm_snapshots | subelements('snapshots') }}"
+      loop_control:
+        loop_var: snapshot_item
+      vars:
+        vm: "{{ snapshot_item.0 }}"
+        snapshot: "{{ snapshot_item.1 }}"
+      register: delete_result
+      ignore_errors: yes
+
+    - name: Agregar servidores a la lista si se eliminaron snapshots
+      set_fact:
+        deleted_vms: "{{ deleted_vms + [item.invocation.module_args.name] }}"
+      loop: "{{ delete_result.results }}"
+      when: item.changed
+      ignore_errors: yes
+
+    - name: Enviar informe por correo
+      mail:
+        host: "{{ server_mail }}"
+        port: "{{ server_puerto }}"
+        from: "{{ correo_de }}"
+        to: "{{ correo_para }}"
+        subject: "Resumen de Snapshots que fueron eliminadas con Ansible Ambiente ( {{ ambiente_data }} )"
+        body: |
+          Te enviamos un resumen de resultados de eliminación de Snapshots Automatizado por Ansible.
+          
+          Se eliminarón los snapshot de los siguientes servidores:
+          {% for servidor in deleted_vms | unique %}
+          - {{ servidor }}
+          {% endfor %}
+             
+          Saludos,
+ 
+          Administrador Ansible
+      delegate_to: localhost
+      when: deleted_vms | length > 0

@@ -1,0 +1,70 @@
+---
+- name: Crear Snapshots para servidores en el inventario
+  strategy: free
+  hosts: localhost
+  vars_files:
+    - ./secrets/credenciales.txt #Estas son las credenciales en vault, en modo global
+  vars:
+    ##### INPUTS #####
+    # ambiente_data = [Prd, noPrd]
+    # memory = [true, false]
+    # snapshot_data = [Etiqueta de mv]
+    ##################
+    - server_mail: "127.0.0.1"
+    - server_puerto: 25
+    - correo_de: "ansible@correo.com"
+    - correo_para: "administradores@correo.com"
+    - fecha_act: "{{ ansible_date_time.year }}{{ ansible_date_time.month }}{{ ansible_date_time.day }}_{{ ansible_date_time.time }}"
+    - memory: ""
+
+  collections:
+    - community.vmware    
+
+  tasks:
+    - name: verirfica si es para PRD o NOPRD
+      set_fact:
+        vcenter: "{{ vcenterprd if ambiente_data == 'Prod' else vcenterdes }}"
+        vdatacenter: "{{ 'DC1' if ambiente_data == 'Prod' else 'DC1_DES' }}"
+        vfolder: "{{ '/DC1/vm' if ambiente_data == 'Prod' else '/DC1_DES/vm' }}"
+
+    - name: Crear snapshots para servidores en el inventario (vcenter)
+      vmware_guest_snapshot:
+        hostname: "{{ vcenter }}"
+        username: "{{ vcusuario }}"
+        password: "{{ vcpassword }}"
+        validate_certs: no
+        datacenter: "{{ vdatacenter }}"
+        folder: "{{ vfolder }}"
+        snapshot_name: "{{ item.split(' \n ')[0].split(' - ')[0] }}_{{ fecha_act }}"
+        description: "{{ item }}"
+        state: present
+        name: "{{ item.split(' \n ')[0] }}"
+        memory_dump: "{{ memory | default('false') }}"
+      with_items: "{{ snapshot_data.split('\n') }}"
+      register: snapshot_result_vcenter
+      ignore_errors: yes
+
+    - name: Generar resultados exitosos y no exitosos
+      set_fact:
+        exitosos: "{{ (snapshot_result_vcenter.results | json_query('[?changed].item') | list) }}"
+ 
+    - name: Enviar informe por correo
+      mail:
+        host: "{{ server_mail }}"
+        port: "{{ server_puerto }}"
+        from: "{{ correo_de }}"
+        to: "{{ correo_para }}"
+        subject: "Resumen de Snapshots realizados con Ansible Ambientes ( {{ ambiente_data }} )"
+        body: |
+          Te enviamos un resumen de resultados de creaci n de Snapshots Automatizado por Ansible.
+          
+          Los snapshot exitosos:
+          {% for servidor in exitosos %}
+          - {{ servidor }}
+          {% endfor %}
+             
+          Saludos,
+ 
+          Administrador Ansible
+      delegate_to: localhost
+      when: exitosos | length > 0

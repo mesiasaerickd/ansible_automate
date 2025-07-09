@@ -1,0 +1,83 @@
+---
+- name: Obtener lista de snapshots antiguos y enviarlos por correo
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ./secrets/credenciales.txt #Estas son las credenciales en vault, en modo global
+  vars:
+    ##### INPUTS #####
+    # ambiente_data = [Prd, noPrd]
+    ##################
+    - server_mail: "127.0.0.1"
+    - server_puerto: 25
+    - correo_de: "ansible@correo.com"
+    - correo_para: "administradores@correo.com"
+
+  collections:
+    - community.vmware 
+
+  tasks:
+    - name: verirfica si es para PRD o NOPRD
+      set_fact:
+        vcenter: "{{ vcenterprd if ambiente_data == 'Prod' else vcenterdes }}"
+        vdatacenter: "{{ 'DC1' if ambiente_data == 'Prod' else 'DC1_DES' }}"
+        vfolder: "{{ '/DC1/vm' if ambiente_data == 'Prod' else '/DC1_DES/vm' }}"
+
+    - name: Obtener lista de todas las máquinas virtuales
+      vmware_vm_info:
+        hostname: "{{ vcenter }}"
+        username: "{{ vcusuario }}"
+        password: "{{ vcpassword }}"
+        validate_certs: no
+      register: vm_info
+
+    - name: Extraer lista de nombres de VMs encendidas
+      set_fact:
+        vm_names: "{{ vm_info.virtual_machines | selectattr('power_state', 'equalto', 'poweredOn') | map(attribute='guest_name') | list }}"
+
+    - name: Inicializar lista de VMs con snapshots
+      set_fact:
+        vms_with_snapshots: []    
+
+    - name: Obtener snapshots de todas las VMs
+      vmware_guest_snapshot_info:
+        hostname: "{{ vcenter }}"
+        username: "{{ vcusuario }}"
+        password: "{{ vcpassword }}"
+        validate_certs: no
+        datacenter: "{{ vdatacenter }}"
+        folder: "{{ vfolder }}"  
+        name: "{{ item }}"
+      loop: "{{ vm_names }}"
+      register: snapshots_info
+      ignore_errors: yes  # Evita fallos si una VM no tiene snapshots
+
+    - name: Filtrar VMs que tienen snapshots correctamente
+      set_fact:
+        vms_with_snapshots: "{{ vms_with_snapshots + [item.item] }}"
+      loop: "{{ snapshots_info.results }}"
+      when: 
+        - item.guest_snapshots is defined
+        - item.guest_snapshots.snapshots is defined
+        - item.guest_snapshots.snapshots | length > 0
+
+    - name: Enviar informe por correo
+      mail:
+        host: "{{ server_mail }}"
+        port: "{{ server_puerto }}"
+        from: "{{ correo_de }}"
+        to: "{{ correo_para }}"
+        subject: "Reporte de Snapshots en ( {{ ambiente_data }} )"
+        body: | 
+          A continuación, se muestran las VMs con snapshots:
+          {% if vms_with_snapshots | length > 0 %}
+          {% for vm in vms_with_snapshots %}
+          - {{ vm }}
+          {% endfor %}
+          {% else %}
+          No hay VMs con snapshots.
+          {% endif %}
+          Saludos,
+ 
+          Administrador Ansible
+      delegate_to: localhost
