@@ -3,6 +3,8 @@
   hosts: all
   gather_facts: true
   become: true
+  vars_files:
+    - credenciales.txt
   vars:
     #### Inputs ######
     #java_version: [1.8, 17, 21]
