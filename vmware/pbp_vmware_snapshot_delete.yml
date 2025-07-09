@@ -27,11 +27,11 @@
       meta: end_play
       when: snapshot_data == ""
 
-    - name: Definir lista vacÌa para servidores con snapshots eliminados
+    - name: Definir lista vac√≠a para servidores con snapshots eliminados
       set_fact:
         deleted_vms: []  
 
-    - name: Obtener todos los snapshots de las m·quinas virtuales
+    - name: Obtener todos los snapshots de las m√°quinas virtuales
       vmware_guest_snapshot_info:
         hostname: "{{ vcenter }}"
         username: "{{ vcusuario }}"
@@ -88,9 +88,9 @@
         to: "{{ correo_para }}"
         subject: "Resumen de Snapshots que fueron eliminadas con Ansible Ambiente ( {{ ambiente_data }} )"
         body: |
-          Te enviamos un resumen de resultados de eliminaciÛn de Snapshots Automatizado por Ansible.
+          Te enviamos un resumen de resultados de eliminaci√≥n de Snapshots Automatizado por Ansible.
           
-          Se eliminarÛn los snapshot de los siguientes servidores:
+          Se eliminar√≥n los snapshot de los siguientes servidores:
           {% for servidor in deleted_vms | unique %}
           - {{ servidor }}
           {% endfor %}
