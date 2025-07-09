@@ -9,7 +9,7 @@
     #java_rpl: [SI,NO]
     ##################
     - server_mail: "127.0.0.1"
-    - server_port: 25
+    - server_puerto: 25
     - correo_de: "ansible@correo.com"
     - correo_para: "administradores@correo.com"
     - file_path: /tmp 	#Donde guardaremos archivo de recolección
