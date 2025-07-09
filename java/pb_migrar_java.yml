@@ -4,7 +4,7 @@
   gather_facts: true
   become: true
   vars_files:
-    - credenciales.txt #Estas son las credenciales en vault, en modo global
+    - ./secrets/credenciales.txt #Estas son las credenciales en vault, en modo global
   vars:
     #### Inputs ######
     #java_version: [1.8, 17, 21]
