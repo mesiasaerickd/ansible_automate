@@ -23,7 +23,7 @@
         vdatacenter: "{{ 'DC1' if ambiente_data == 'Prod' else 'DC1_DES' }}"
         vfolder: "{{ '/DC1/vm' if ambiente_data == 'Prod' else '/DC1_DES/vm' }}"
 
-    - name: Obtener lista de todas las máquinas virtuales
+    - name: Obtener lista de todas las mÃ¡quinas virtuales
       vmware_vm_info:
         hostname: "{{ vcenter }}"
         username: "{{ vcusuario }}"
@@ -69,7 +69,7 @@
         to: "{{ correo_para }}"
         subject: "Reporte de Snapshots en ( {{ ambiente_data }} )"
         body: | 
-          A continuación, se muestran las VMs con snapshots:
+          A continuaciÃ³n, se muestran las VMs con snapshots:
           {% if vms_with_snapshots | length > 0 %}
           {% for vm in vms_with_snapshots %}
           - {{ vm }}
