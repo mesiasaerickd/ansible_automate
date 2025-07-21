@@ -1,0 +1,61 @@
+---
+- name: Configurar servidor repositorio local RHEL9
+  hosts: repo_server #Aqui el servidor donde sera asignado e implementado 
+  gather_facts: false
+  become: true
+  vars_files:
+    - ./secrets/credenciales.txt #Estas son las credenciales en vault, en modo global
+  vars:
+    base_dir: /var/www/html
+    baseos_dir: /var/www/html/rhel-9-for-x86_64-baseos-rpms
+    appstream_dir: /var/www/html/rhel-9-for-x86_64-appstream-rpms
+
+  tasks:
+    - name: Instalar Apache y herramientas necesarias
+      dnf:
+        name:
+          - httpd
+          - yum-utils
+          - createrepo
+          - epel-release
+        state: present
+
+    - name: Habilitar e iniciar Apache
+      systemd:
+        name: httpd
+        state: started
+        enabled: true
+
+    - name: Configurar firewalld para permitir HTTP
+      firewalld:
+        service: http
+        permanent: yes
+        state: enabled
+        immediate: yes
+
+    - name: Crear directorios del repositorio
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ baseos_dir }}"
+        - "{{ appstream_dir }}"
+
+    - name: Copiar script reposync al servidor
+      copy:
+        src: repo_rhel9.sh
+        dest: /usr/local/bin/repo_rhel9.sh
+        mode: '0755'
+
+    - name: Configurar cron para sincronización semanal
+      cron:
+        name: "Sincronizar Repos RHEL9"
+        minute: "0"
+        hour: "2"
+        weekday: "0"
+        job: "/usr/local/bin/repo_rhel9.sh >> /var/log/repo_rhel9.log 2>&1"
+
+    - name: Mostrar mensaje final
+      debug:
+        msg: "Servidor repositorio RHEL9 instalado, configurado y sincronizado correctamente."
