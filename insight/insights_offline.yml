@@ -1,0 +1,48 @@
+---
+- name: Recolectar archivos de Insights desde servidores sin internet
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    insights_dir: /var/cache/insights-client
+    cargalocal_dir: /tmp/insights-payloads
+  vars_files:
+    - ../../secrets/auth.txt
+    
+  tasks:
+    - name: Ejecutar insights-client en modo offline
+      command: insights-client --offline
+
+    - name: Buscar archivo .tar.gz generado
+      find:
+        paths: "{{ insights_dir }}"
+        patterns: '*.tar.gz'
+      register: cargas
+
+    - name: Copiar payloads al nodo de ejecución
+      fetch:
+        src: "{{ item.path }}"
+        dest: "{{ cargalocal_dir }}/"
+        flat: yes
+      loop: "{{ cargas.files }}"
+
+- name: Subir payloads a Red Hat Insights desde el nodo con internet
+  hosts: localhost
+  become: true
+  gather_facts: false
+  vars:
+    cargalocal_dir: /tmp/insights-payloads
+
+  tasks:
+    - name: Enviar cada archivo a Red Hat Insights
+      command: insights-client --payload {{ item }} --content-type gz
+      loop: "{{ lookup('fileglob', cargalocal_dir ~ '/*.tar.gz', wantlist=True) }}"
+      register: upload_results
+
+    - name: Eliminar payloads locales después del envío
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ lookup('fileglob', cargalocal_dir ~ '/*.tar.gz', wantlist=True) }}"
+      when: upload_results is defined
+
