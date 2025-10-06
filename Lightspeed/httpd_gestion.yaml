@@ -1,0 +1,53 @@
+
+
+
+- name : verificar httpd
+  hosts: servidores_httpd
+  become: yes
+  tasks:
+    - name: Verificar si el servicio httpd está activo
+      ansible.builtin.systemd:
+        name: httpd
+        state: started
+      register: resultado_httpd
+
+    - name: Mostrar el estado del servicio httpd
+      ansible.builtin.debug:
+        msg: "El servicio httpd está activo y funcionando correctamente."
+      when: resultado_httpd.changed == false
+
+    - name: Mostrar mensaje si el servicio httpd no está activo
+      ansible.builtin.debug:
+        msg: "El servicio httpd no está activo. Por favor, verifique la configuración."
+      when: resultado_httpd.changed == true
+
+- name: instalar el httpd en caso no este instalado
+  hosts: servidores_httpd
+  become: yes
+  tasks:
+    - name: Instalar el paquete httpd
+      ansible.builtin.yum:
+        name: httpd
+        state: present
+
+    - name: Asegurarse de que el servicio httpd esté iniciado y habilitado
+      ansible.builtin.systemd:
+        name: httpd
+        state: started
+        enabled: yes
+
+    - name: Verificar el estado del servicio httpd
+      ansible.builtin.systemd:
+        name: httpd
+        state: started
+      register: resultado_httpd_instalacion
+
+    - name: Mostrar el estado del servicio httpd después de la instalación
+      ansible.builtin.debug:
+        msg: "El servicio httpd ha sido instalado y está activo."
+      when: resultado_httpd_instalacion.changed == false
+
+    - name: Mostrar mensaje si el servicio httpd no está activo después de la instalación
+      ansible.builtin.debug:
+        msg: "El servicio httpd no está activo después de la instalación. Por favor, verifique la configuración."
+      when: resultado_httpd_instalacion.changed == true

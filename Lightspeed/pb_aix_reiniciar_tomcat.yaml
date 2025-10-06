@@ -1,0 +1,26 @@
+- name: reiniciar tomcat
+  hosts: servidores_tomcat
+  become: yes
+  tasks:
+    - name: Reiniciar el servicio tomcat
+      ansible.builtin.systemd:
+        name: tomcat
+        state: restarted
+      register: resultado_tomcat
+
+    - name: Mostrar el estado del servicio tomcat después del reinicio
+      ansible.builtin.debug:
+        msg: "El servicio tomcat ha sido reiniciado y está activo."
+      when: resultado_tomcat.changed == false
+
+    - name: Mostrar mensaje si el servicio tomcat no está activo después del reinicio
+      ansible.builtin.debug:
+        msg: "El servicio tomcat no está activo después del reinicio. Por favor, verifique la configuración."
+      when: resultado_tomcat.changed == true  
+    - name: crear url para verificar mi web
+      ansible.builtin.uri:
+        url: "http://{{ inventory_hostname }}/miweb"
+        method: GET
+        return_content: yes
+      register: resultado_web
+      retries: 5
