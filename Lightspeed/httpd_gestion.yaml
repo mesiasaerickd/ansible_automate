@@ -51,3 +51,8 @@
       ansible.builtin.debug:
         msg: "El servicio httpd no está activo después de la instalación. Por favor, verifique la configuración."
       when: resultado_httpd_instalacion.changed == true
+    - name: actualiza mi s.o
+      ansible.builtin.yum:
+        name: '*'
+        state: latest
+      register: resultado_update
