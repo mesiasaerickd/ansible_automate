@@ -1,0 +1,18 @@
+name: ping
+hosts: all
+tasks:
+  - name: ping
+    ansible.builtin.ping:
+    register: ping_output
+    ignore_errors: true
+
+  - name: Set result
+    ansible.builtin.set_fact:
+      task_results:
+        report: "{{ping_output | default('')}}"
+        message: "{{ping_output.ping | default('Error performing ping task')}}"
+        alert: "{{ping_output.failed | default('true')}}"
+
+  - name: Print Task Result
+    ansible.builtin.debug:
+      var: task_results
